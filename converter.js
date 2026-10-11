@@ -83,7 +83,7 @@
     target = target || 'cubic';
     var data;
     try {
-      data = typeof input === 'string' ? JSON.parse(input.replace(/^﻿/, '')) : input;
+      data = typeof input === 'string' ? JSON.parse(input.replace(/^\uFEFF/, '')) : input;
     } catch (e) {
       throw new Error('This file is not a csTimer export (it is not valid JSON).');
     }
@@ -243,6 +243,137 @@
     return lines.join('\n') + '\n';
   }
 
+  /**
+   * Splits a backup into records the way the apps read it: a port of opencsv 3.7
+   * CSVReader/CSVParser with separator ';', quote '"', escape '\', strictQuotes on.
+   * With strictQuotes, characters outside quotes are dropped. A quoted field can span lines.
+   */
+  function readCsvRecords(text) {
+    var lines = text.split(/\r\n|\r|\n/);
+    if (lines.length && lines[lines.length - 1] === '') lines.pop();
+    var records = [];
+    var pending = null;
+    var inField = false; // parser state that opencsv keeps across lines
+    var result = null;
+
+    lines.forEach(function (line) {
+      var tokens = [];
+      var sb = '';
+      var inQuotes = false;
+      if (pending !== null) {
+        sb = pending;
+        pending = null;
+        inQuotes = true;
+      }
+      for (var i = 0; i < line.length; i++) {
+        var c = line.charAt(i);
+        var quoted = inQuotes || inField;
+        if (c === '\\') {
+          if (quoted && i + 1 < line.length && (line.charAt(i + 1) === '"' || line.charAt(i + 1) === '\\')) {
+            sb += line.charAt(++i);
+          }
+        } else if (c === '"') {
+          if (quoted && i + 1 < line.length && line.charAt(i + 1) === '"') {
+            sb += line.charAt(++i);
+          } else {
+            inQuotes = !inQuotes;
+          }
+          inField = !inField;
+        } else if (c === ';' && !inQuotes) {
+          tokens.push(sb);
+          sb = '';
+          inField = false;
+        } else if (inQuotes) {
+          sb += c;
+          inField = true;
+        }
+      }
+      if (inQuotes) {
+        pending = sb + '\n';
+      } else {
+        inField = false;
+        tokens.push(sb);
+      }
+      if (tokens.length) result = result ? result.concat(tokens) : tokens;
+      if (pending === null) {
+        records.push(result || []);
+        result = null;
+      }
+    });
+    // At the end of the file opencsv drops an unclosed quoted field but keeps the fields before it.
+    if (pending !== null && result) records.push(result);
+    return records;
+  }
+
+  var LONG = /^[+-]?\d+$/;
+
+  /**
+   * Reads a Cubic Timer or Twisty Timer backup file. The first line is the header.
+   * Rows the apps would reject are counted in `errors`, as the apps do.
+   */
+  function parseBackup(text) {
+    text = String(text).replace(/^\uFEFF/, '');
+    if (!/^"?Puzzle"?[,;]"?Category"?[,;]"?Time\(millis\)/.test(text)) {
+      throw new Error('This file is not a Cubic Timer or Twisty Timer backup.');
+    }
+    var records = readCsvRecords(text);
+    var solves = [];
+    var errors = 0;
+    records.slice(1).forEach(function (f) {
+      if (f.length < 7 || !LONG.test(f[2]) || !LONG.test(f[3]) || !LONG.test(f[5])) {
+        errors++;
+        return;
+      }
+      solves.push({
+        puzzle: f[0], category: f[1], time: Number(f[2]), date: Number(f[3]),
+        scramble: f[4], penalty: Number(f[5]), comment: f[6]
+      });
+    });
+    return { solves: solves, errors: errors };
+  }
+
+  /**
+   * Two solves are the same solve when they finished at the same millisecond and have the
+   * same raw time. csTimer dates are whole seconds, converted to milliseconds, so they match
+   * the date the apps store for a solve imported from csTimer. Puzzle, category, scramble and
+   * comment are not part of the key, so a solve still matches after you move or rename it in
+   * the app. The +2 is taken off the time, so a solve still matches after a penalty change.
+   */
+  function solveKey(s) {
+    return s.date + '|' + (s.penalty === 1 ? s.time - 2000 : s.time);
+  }
+
+  /**
+   * Adds the csTimer solves to the solves of an existing backup. A csTimer solve that the
+   * backup already has, or that came earlier in the csTimer file, is left out. The backup's
+   * own rows are all kept: the apps can hold different solves with the same date, for example
+   * after a .txt import that has no dates.
+   */
+  function mergeSolves(existing, incoming) {
+    var seen = {};
+    existing.forEach(function (s) { seen[solveKey(s)] = true; });
+    var added = [];
+    incoming.forEach(function (s) {
+      var key = solveKey(s);
+      if (seen[key]) return;
+      seen[key] = true;
+      added.push(s);
+    });
+    var solves = existing.concat(added);
+    solves.sort(function (a, b) { return a.date - b.date; });
+    return { solves: solves, added: added.length, duplicates: incoming.length - added.length };
+  }
+
+  /** Category names in a backup, per puzzle, so new sessions can join one of them. */
+  function categoriesByPuzzle(solves) {
+    var map = {};
+    solves.forEach(function (s) {
+      (map[s.puzzle] = map[s.puzzle] || {})[s.category] = true;
+    });
+    Object.keys(map).forEach(function (p) { map[p] = Object.keys(map[p]).sort(); });
+    return map;
+  }
+
   function backupFileName(now) {
     var d = now || new Date();
     var pad = function (n) { return (n < 10 ? '0' : '') + n; };
@@ -250,15 +381,26 @@
       '_' + pad(d.getHours()) + '-' + pad(d.getMinutes()) + '.txt';
   }
 
-  /** One call conversion: csTimer export text in, backup file text out. */
-  function convert(input, target) {
+  /**
+   * One call conversion: csTimer export text in, backup file text out.
+   * With `backupText`, the csTimer solves are added to that existing backup.
+   */
+  function convert(input, target, backupText) {
     var sessions = readSessions(input, target);
     var result = convertSessions(sessions);
+    var backup = backupText !== undefined && backupText !== null
+      ? parseBackup(backupText) : { solves: [], errors: 0 };
+    var merged = mergeSolves(backup.solves, result.solves);
     return {
-      csv: toBackupCsv(result.solves),
       sessions: sessions,
-      solveCount: result.solves.length,
-      skipped: result.skipped
+      solves: merged.solves,
+      solveCount: merged.solves.length,
+      csv: toBackupCsv(merged.solves),
+      skipped: result.skipped,
+      existing: backup.solves.length,
+      backupErrors: backup.errors,
+      added: merged.added,
+      duplicates: merged.duplicates
     };
   }
 
@@ -270,6 +412,10 @@
     convertSolve: convertSolve,
     convertSessions: convertSessions,
     toBackupCsv: toBackupCsv,
+    readCsvRecords: readCsvRecords,
+    parseBackup: parseBackup,
+    mergeSolves: mergeSolves,
+    categoriesByPuzzle: categoriesByPuzzle,
     backupFileName: backupFileName,
     convert: convert
   };

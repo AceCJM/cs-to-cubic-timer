@@ -13,10 +13,11 @@ You can use the online version at [claude.ai/artifact/8mKuDEMCb4tK6mXqzH4Frr](ht
 3. Open the online version. Alternatively, open `index.html` from this folder in a browser, and keep `converter.js` in the same folder.
 4. Drop the csTimer file onto the page.
 5. Select Cubic Timer or Twisty Timer.
-6. Look at the session table. If a session has the wrong puzzle or category name, change it.
-7. Click Download backup file. In the online version, click Save backup file and confirm the save.
-8. Copy the backup file to your phone.
-9. In the app, open the side menu and tap Export/Import. Tap Import…, then From backup, and choose the file.
+6. Optional: to add the times to an existing app backup, choose that backup file below the csTimer file. To make the backup, tap Export/Import in the app, then Export…, then For backup.
+7. Look at the session table. If a session has the wrong puzzle or category name, change it. If you added a backup, the category field lists the categories in that backup.
+8. Click Download backup file. In the online version, click Save backup file and confirm the save.
+9. Copy the backup file to your phone.
+10. In the app, open the side menu and tap Export/Import. Tap Import…, then From backup, and choose the file.
 
 ## Use the command line
 
@@ -27,6 +28,14 @@ node cli.js cstimer_20261011_101500.txt --target cubic -o backup.txt
 ```
 
 The `--target` value is `cubic` or `twisty`. The default is `cubic`. If you do not give `-o`, the tool writes `Backup_csTimer_<date>.txt` in the current folder. The command line always uses the default puzzle for each session.
+
+To add the csTimer solves to an existing Cubic Timer or Twisty Timer backup, give that backup with `--merge`:
+
+```bash
+node cli.js cstimer_20261011_101500.txt --merge Backup_2026-10-11.txt -o merged.txt
+```
+
+The tool reads the existing backup in the same way that the apps read it.
 
 ## How sessions become puzzles
 
@@ -54,6 +63,17 @@ The category name is the csTimer session name. If two sessions get the same puzz
 | Scramble | Scramble. The tool adjusts Square-1 and Megaminx scrambles the same way that the Cubic Timer csTimer import does, so that the scramble images show. |
 | Comment | Comment |
 | Multi-phase splits | Lines in the comment, for example `P1: 7.50` |
+
+## Duplicate solves
+
+The tool writes each csTimer solve one time only. Two solves are the same solve when they have the same date in milliseconds and the same time. The tool does not count a +2 in this time. csTimer stores dates in whole seconds, and the tool multiplies them by 1000. Thus, a csTimer solve has the same date as the copy of that solve in an app backup.
+
+The tool uses this rule in two places:
+
+1. If the csTimer file has the same solve in two sessions, the tool keeps the first one.
+2. If you merge with an app backup, the tool leaves out each csTimer solve that the backup already has. This includes a solve that you moved to a different puzzle or category, or gave a different penalty, in the app.
+
+The tool keeps all the solves in the app backup. Different app solves can have the same date, for example after an import from a .txt file that has no dates.
 
 ## Restoring more than one time
 

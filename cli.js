@@ -5,15 +5,17 @@ const fs = require('fs');
 const path = require('path');
 const { convert, backupFileName, PUZZLE_NAMES } = require('./converter');
 
-const USAGE = `Usage: node cli.js <cstimer-export.txt> [--target cubic|twisty] [-o <backup.txt>]
+const USAGE = `Usage: node cli.js <cstimer-export.txt> [--target cubic|twisty] [--merge <app-backup.txt>] [-o <backup.txt>]
 
   --target  App that will restore the backup. Default: cubic.
+  --merge   Existing Cubic Timer or Twisty Timer backup. The csTimer solves are added to it.
   -o        Output file. Default: Backup_csTimer_<date>.txt in the current folder.`;
 
 function main(argv) {
   let input = null;
   let output = null;
   let target = 'cubic';
+  let merge = null;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -24,6 +26,12 @@ function main(argv) {
       output = argv[++i];
     } else if (arg === '--target' || arg === '-t') {
       target = argv[++i];
+    } else if (arg === '--merge' || arg === '-m') {
+      merge = argv[++i];
+      if (!merge) {
+        console.error(USAGE);
+        return 1;
+      }
     } else if (!input) {
       input = arg;
     } else {
@@ -39,7 +47,8 @@ function main(argv) {
 
   let result;
   try {
-    result = convert(fs.readFileSync(input, 'utf8'), target);
+    const backupText = merge ? fs.readFileSync(merge, 'utf8') : null;
+    result = convert(fs.readFileSync(input, 'utf8'), target, backupText);
   } catch (e) {
     console.error('Error: ' + e.message);
     return 1;
@@ -51,8 +60,16 @@ function main(argv) {
   for (const s of result.sessions) {
     console.log(`  ${s.name} (${s.scrType}) -> ${PUZZLE_NAMES[s.puzzle]} / ${s.category}: ${s.solves.length} solves`);
   }
-  console.log(`Wrote ${result.solveCount} solves from ${result.sessions.length} sessions to ${output}`);
-  if (result.skipped) console.log(`Skipped ${result.skipped} records that could not be read.`);
+  if (merge) {
+    console.log(`Kept ${result.existing} solves from ${merge}.`);
+    if (result.backupErrors) console.log(`Skipped ${result.backupErrors} backup rows that the app also cannot read.`);
+  }
+  console.log(`Added ${result.added} csTimer solves.`);
+  if (result.duplicates) {
+    console.log(`Left out ${result.duplicates} duplicate csTimer solves (same date in milliseconds and same time).`);
+  }
+  console.log(`Wrote ${result.solveCount} solves to ${output}`);
+  if (result.skipped) console.log(`Skipped ${result.skipped} csTimer records that could not be read.`);
   return 0;
 }
 

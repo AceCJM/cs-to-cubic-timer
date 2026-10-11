@@ -39,6 +39,10 @@
   #drop.over { border-color: var(--accent); }
   #drop input { display: none; }
   .targets { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 16px; }
+  .merge { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .merge-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+  .merge-row input[type="file"] { max-width: 100%; }
+  .link-button { font: inherit; background: none; color: var(--accent); padding: 0; border: 0; text-decoration: underline; cursor: pointer; }
   .targets label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
   .error { color: var(--warn); margin-top: 12px; }
   .table-wrap { overflow-x: auto; }
@@ -87,12 +91,22 @@
       <label><input type="radio" name="target" value="cubic" checked> Cubic Timer</label>
       <label><input type="radio" name="target" value="twisty"> Twisty Timer</label>
     </div>
+    <div class="merge">
+      <p><b>Optional:</b> add the times to an existing Cubic Timer or Twisty Timer backup.
+        The new file then holds your app solves and your csTimer solves.</p>
+      <div class="merge-row">
+        <input type="file" id="backup-file" accept=".txt,.csv,text/plain">
+        <span id="backup-info" class="muted"></span>
+        <button type="button" class="link-button" id="backup-clear" hidden>Remove backup</button>
+      </div>
+    </div>
     <p class="error" id="error" hidden></p>
   </section>
 
   <section id="sessions-section" hidden>
     <h2>3. Check the sessions</h2>
-    <p class="muted">Each csTimer session becomes a category under a puzzle. Change the puzzle or the category name if you want.</p>
+    <p class="muted">Each csTimer session becomes a category under a puzzle. Change the puzzle or the category name if you want.
+      If you added a backup, you can pick one of its categories from the list.</p>
     <div class="table-wrap">
       <table>
         <thead>
@@ -125,7 +139,7 @@
 (function () {
   'use strict';
   var C = window.CsToCubic;
-  var state = { text: null, sessions: [] };
+  var state = { text: null, sessions: [], backup: null };
   var $ = function (id) { return document.getElementById(id); };
 
   function target() {
@@ -182,11 +196,16 @@
         select.appendChild(o);
       });
       select.value = s.puzzle;
-      select.addEventListener('change', function () { s.puzzle = select.value; update(); });
+      select.addEventListener('change', function () {
+        s.puzzle = select.value;
+        input.setAttribute('list', 'cats-' + s.puzzle);
+        update();
+      });
 
       var input = document.createElement('input');
       input.type = 'text';
       input.value = s.category;
+      input.setAttribute('list', 'cats-' + s.puzzle);
       input.addEventListener('input', function () { s.category = input.value; update(); });
 
       [check, nameCell, s.solves.length, select, input].forEach(function (content, i) {
@@ -199,6 +218,44 @@
     });
     $('sessions-section').hidden = false;
     update();
+  }
+
+  function renderCategoryLists() {
+    var old = document.querySelectorAll('datalist[data-cats]');
+    Array.prototype.forEach.call(old, function (d) { d.remove(); });
+    var map = state.backup ? C.categoriesByPuzzle(state.backup.solves) : {};
+    Object.keys(map).forEach(function (p) {
+      var list = document.createElement('datalist');
+      list.id = 'cats-' + p;
+      list.setAttribute('data-cats', '');
+      map[p].forEach(function (c) {
+        var o = document.createElement('option');
+        o.value = c;
+        list.appendChild(o);
+      });
+      document.body.appendChild(list);
+    });
+  }
+
+  function build() {
+    var converted = C.convertSessions(state.sessions);
+    var merged = C.mergeSolves(state.backup ? state.backup.solves : [], converted.solves);
+    merged.skipped = converted.skipped;
+    return merged;
+  }
+
+  function solves(n, what) {
+    return n + ' ' + (what ? what + ' ' : '') + (n === 1 ? 'solve' : 'solves');
+  }
+
+  function describe(result) {
+    var parts = [];
+    if (state.backup) parts.push(solves(state.backup.solves.length) + ' from your backup');
+    parts.push(solves(result.added, 'csTimer'));
+    var text = parts.join(' + ') + ' = ' + solves(result.solves.length) + '.';
+    if (result.duplicates) text += ' Left out ' + solves(result.duplicates, 'duplicate csTimer') + '.';
+    if (result.skipped) text += ' ' + result.skipped + ' csTimer records could not be read.';
+    return text;
   }
 
   function update() {
@@ -216,8 +273,7 @@
     $('dupes').textContent = msg;
     $('dupes').hidden = !msg;
     $('download').disabled = count === 0 || empty;
-    $('summary').textContent = count + ' solves from ' + chosen.length + ' of ' +
-      state.sessions.length + ' sessions';
+    $('summary').textContent = chosen.length + ' of ' + state.sessions.length + ' sessions. ' + describe(build());
   }
 
   function readFile(file) {
@@ -233,6 +289,40 @@
   }
 
   $('file').addEventListener('change', function () { readFile(this.files[0]); });
+
+  $('backup-file').addEventListener('change', function () {
+    var file = this.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        state.backup = C.parseBackup(reader.result);
+        showError('');
+        $('backup-info').textContent = state.backup.solves.length + ' solves in ' + file.name +
+          (state.backup.errors ? ' (' + state.backup.errors + ' rows the app also cannot read)' : '');
+        $('backup-clear').hidden = false;
+      } catch (e) {
+        state.backup = null;
+        $('backup-file').value = '';
+        $('backup-info').textContent = '';
+        $('backup-clear').hidden = true;
+        showError(e.message);
+      }
+      renderCategoryLists();
+      if (state.sessions.length) update();
+    };
+    reader.onerror = function () { showError('The backup file could not be read.'); };
+    reader.readAsText(file, 'UTF-8');
+  });
+
+  $('backup-clear').addEventListener('click', function () {
+    state.backup = null;
+    $('backup-file').value = '';
+    $('backup-info').textContent = '';
+    $('backup-clear').hidden = true;
+    renderCategoryLists();
+    if (state.sessions.length) update();
+  });
   var drop = $('drop');
   ['dragenter', 'dragover'].forEach(function (ev) {
     drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('over'); });
@@ -247,7 +337,7 @@
   });
 
   $('download').addEventListener('click', function () {
-    var result = C.convertSessions(state.sessions);
+    var result = build();
     var blob = new Blob([C.toBackupCsv(result.solves)], { type: 'text/plain;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -256,8 +346,7 @@
     a.click();
     a.remove();
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-    $('summary').textContent = 'Saved ' + result.solves.length + ' solves.' +
-      (result.skipped ? ' Skipped ' + result.skipped + ' records that could not be read.' : '');
+    $('summary').textContent = 'Saved. ' + describe(result);
   });
 })();
 </script>
