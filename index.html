@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>csTimer to Cubic Timer</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5f6b7d; --line: #dde2ea;
+    --accent: #2f6fde; --accent-text: #ffffff; --warn: #a15c00; --drop: #eef3fc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14171c; --panel: #1d2128; --text: #e6e9ef; --muted: #9aa4b4; --line: #2f3542;
+      --accent: #6b9cf2; --accent-text: #0e1420; --warn: #f0b35a; --drop: #1f2838;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 920px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  p { margin: 0 0 10px; }
+  a { color: var(--accent); }
+  .lead { color: var(--muted); margin-bottom: 24px; }
+  section {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 20px; margin-bottom: 16px;
+  }
+  ol { margin: 0; padding-left: 20px; }
+  li { margin-bottom: 4px; }
+  #drop {
+    display: block; border: 2px dashed var(--line); border-radius: 10px; padding: 28px 16px;
+    text-align: center; cursor: pointer; background: var(--drop);
+  }
+  #drop.over { border-color: var(--accent); }
+  #drop input { display: none; }
+  .targets { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 16px; }
+  .targets label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .error { color: var(--warn); margin-top: 12px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 560px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { font-weight: 600; color: var(--muted); font-size: 0.85rem; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  code { font-size: 0.85em; color: var(--muted); }
+  select, input[type="text"] {
+    font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 4px 6px; width: 100%;
+  }
+  tr.off td:not(:first-child) { opacity: 0.45; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 16px; }
+  button {
+    font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 10px 18px;
+    background: var(--accent); color: var(--accent-text); cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .muted { color: var(--muted); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>csTimer to Cubic Timer</h1>
+  <p class="lead">Converts all your csTimer sessions into one backup file that Cubic Timer or Twisty Timer can restore.
+    The file stays on your device. Nothing is uploaded.</p>
+
+  <section>
+    <h2>1. Export from csTimer</h2>
+    <ol>
+      <li>Open <a href="https://cstimer.net" target="_blank" rel="noopener">cstimer.net</a> on the device that has your times.</li>
+      <li>Click the <b>EXPORT</b> button.</li>
+      <li>Click <b>Export to file</b>. csTimer saves a file named like <code>cstimer_20261011_101500.txt</code>.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>2. Open the csTimer file</h2>
+    <label id="drop">
+      <input type="file" id="file" accept=".txt,.json,text/plain,application/json">
+      <span id="drop-text">Drop the csTimer file here, or click to choose it.</span>
+    </label>
+    <div class="targets" role="radiogroup" aria-label="Target app">
+      <label><input type="radio" name="target" value="cubic" checked> Cubic Timer</label>
+      <label><input type="radio" name="target" value="twisty"> Twisty Timer</label>
+    </div>
+    <p class="error" id="error" hidden></p>
+  </section>
+
+  <section id="sessions-section" hidden>
+    <h2>3. Check the sessions</h2>
+    <p class="muted">Each csTimer session becomes a category under a puzzle. Change the puzzle or the category name if you want.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th></th><th>csTimer session</th><th class="num">Solves</th><th>Puzzle</th><th>Category</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="error" id="dupes" hidden></p>
+    <div class="actions">
+      <button id="download" type="button">Download backup file</button>
+      <span id="summary" class="muted"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>4. Restore on your phone</h2>
+    <ol>
+      <li>Copy the backup file to your phone.</li>
+      <li>In Cubic Timer or Twisty Timer, open the side menu and tap <b>Export/Import</b>.</li>
+      <li>Tap <b>Import…</b>, then <b>From backup</b>, and choose the file.</li>
+    </ol>
+    <p class="muted" style="margin-top:10px">If you restore the same file twice, the app ignores the solves it already has.
+      If you change a puzzle or category name between two restores, the app adds those solves again.</p>
+  </section>
+</main>
+
+<script src="converter.js"></script>
+<script>
+(function () {
+  'use strict';
+  var C = window.CsToCubic;
+  var state = { text: null, sessions: [] };
+  var $ = function (id) { return document.getElementById(id); };
+
+  function target() {
+    return document.querySelector('input[name="target"]:checked').value;
+  }
+
+  function showError(msg) {
+    $('error').textContent = msg || '';
+    $('error').hidden = !msg;
+  }
+
+  function load() {
+    if (!state.text) return;
+    try {
+      state.sessions = C.readSessions(state.text, target());
+      showError('');
+      render();
+    } catch (e) {
+      state.sessions = [];
+      $('sessions-section').hidden = true;
+      showError(e.message);
+    }
+  }
+
+  function render() {
+    var rows = $('rows');
+    rows.textContent = '';
+    var puzzles = C.PUZZLES[target()];
+    state.sessions.forEach(function (s) {
+      var tr = document.createElement('tr');
+      tr.className = s.include ? '' : 'off';
+
+      var check = document.createElement('input');
+      check.type = 'checkbox';
+      check.checked = s.include;
+      check.setAttribute('aria-label', 'Include ' + s.name);
+      check.addEventListener('change', function () {
+        s.include = check.checked;
+        tr.className = s.include ? '' : 'off';
+        update();
+      });
+
+      var nameCell = document.createElement('td');
+      nameCell.appendChild(document.createTextNode(s.name + ' '));
+      var code = document.createElement('code');
+      code.textContent = s.scrType;
+      nameCell.appendChild(code);
+
+      var select = document.createElement('select');
+      puzzles.forEach(function (p) {
+        var o = document.createElement('option');
+        o.value = p;
+        o.textContent = C.PUZZLE_NAMES[p];
+        select.appendChild(o);
+      });
+      select.value = s.puzzle;
+      select.addEventListener('change', function () { s.puzzle = select.value; update(); });
+
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.value = s.category;
+      input.addEventListener('input', function () { s.category = input.value; update(); });
+
+      [check, nameCell, s.solves.length, select, input].forEach(function (content, i) {
+        var td = content.nodeName === 'TD' ? content : document.createElement('td');
+        if (i === 2) { td.className = 'num'; td.textContent = content; }
+        else if (td !== content) td.appendChild(content);
+        tr.appendChild(td);
+      });
+      rows.appendChild(tr);
+    });
+    $('sessions-section').hidden = false;
+    update();
+  }
+
+  function update() {
+    var chosen = state.sessions.filter(function (s) { return s.include; });
+    var count = chosen.reduce(function (n, s) { return n + s.solves.length; }, 0);
+    var seen = {}, dupes = [], empty = false;
+    chosen.forEach(function (s) {
+      if (!s.category.trim()) empty = true;
+      var key = s.puzzle + '\n' + s.category;
+      if (seen[key]) dupes.push(C.PUZZLE_NAMES[s.puzzle] + ' / ' + s.category);
+      seen[key] = true;
+    });
+    var msg = empty ? 'Every category needs a name.' :
+      dupes.length ? 'These sessions will merge into one category: ' + dupes.join(', ') + '.' : '';
+    $('dupes').textContent = msg;
+    $('dupes').hidden = !msg;
+    $('download').disabled = count === 0 || empty;
+    $('summary').textContent = count + ' solves from ' + chosen.length + ' of ' +
+      state.sessions.length + ' sessions';
+  }
+
+  function readFile(file) {
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      state.text = reader.result;
+      $('drop-text').textContent = file.name + ' (click to choose a different file)';
+      load();
+    };
+    reader.onerror = function () { showError('The file could not be read.'); };
+    reader.readAsText(file, 'UTF-8');
+  }
+
+  $('file').addEventListener('change', function () { readFile(this.files[0]); });
+  var drop = $('drop');
+  ['dragenter', 'dragover'].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('over'); });
+  });
+  ['dragleave', 'drop'].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove('over'); });
+  });
+  drop.addEventListener('drop', function (e) { readFile(e.dataTransfer.files[0]); });
+
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="target"]'), function (r) {
+    r.addEventListener('change', load);
+  });
+
+  $('download').addEventListener('click', function () {
+    var result = C.convertSessions(state.sessions);
+    var blob = new Blob([C.toBackupCsv(result.solves)], { type: 'text/plain;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = C.backupFileName();
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    $('summary').textContent = 'Saved ' + result.solves.length + ' solves.' +
+      (result.skipped ? ' Skipped ' + result.skipped + ' records that could not be read.' : '');
+  });
+})();
+</script>
+</body>
+</html>
