@@ -1,0 +1,10 @@
+{
+  "name": "cs-to-cubic-timer",
+  "version": "1.0.0",
+  "description": "Convert a csTimer export into a Cubic Timer / Twisty Timer backup file",
+  "license": "MIT",
+  "main": "converter.js",
+  "bin": { "cs-to-cubic-timer": "cli.js" },
+  "scripts": { "test": "node --test test/" },
+  "engines": { "node": ">=18" }
+}
