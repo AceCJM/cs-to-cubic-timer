@@ -6,13 +6,15 @@ The conversion runs on your computer. The tool does not upload your times.
 
 ## Use the web page
 
+You can use the online version at [claude.ai/artifact/8mKuDEMCb4tK6mXqzH4Frr](https://claude.ai/artifact/8mKuDEMCb4tK6mXqzH4Frr). You can also open `index.html` from this folder. Both pages do the same conversion.
+
 1. Open [cstimer.net](https://cstimer.net) on the device that has your times.
 2. Click EXPORT, then click Export to file.
-3. Open `index.html` from this folder in a browser. Keep `converter.js` in the same folder.
+3. Open the online version. Alternatively, open `index.html` from this folder in a browser, and keep `converter.js` in the same folder.
 4. Drop the csTimer file onto the page.
 5. Select Cubic Timer or Twisty Timer.
 6. Look at the session table. If a session has the wrong puzzle or category name, change it.
-7. Click Download backup file.
+7. Click Download backup file. In the online version, click Save backup file and confirm the save.
 8. Copy the backup file to your phone.
 9. In the app, open the side menu and tap Export/Import. Tap Import…, then From backup, and choose the file.
 
